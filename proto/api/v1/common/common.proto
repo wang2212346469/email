@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package api.v1.common;
+
+option go_package = "github.com/gpu-scheduler/backend/pkg/pb/common;commonpb";
+option java_package = "api.v1.common";
+option java_outer_classname = "CommonProto";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+// 消息信封（所有 Kafka 消息的公共头部）
+message MessageEnvelope {
+  string event_id = 1;       // 全局唯一事件 ID
+  string event_type = 2;     // 事件类型（如 "paas.resource.sync"）
+  string producer = 3;       // 生产者标识
+  string version = 4;        // 消息版本
+  google.protobuf.Timestamp created_at = 5; // 消息创建时间
+  map<string, string> metadata = 6; // 扩展元数据
+}
+
+// PaaS 资源状态枚举
+enum PaasResourceStatus {
+  PAAS_RESOURCE_STATUS_UNSPECIFIED = 0;
+  PAAS_RESOURCE_STATUS_AVAILABLE = 1;   // 空闲可用
+  PAAS_RESOURCE_STATUS_IN_USE = 2;      // 使用中
+  PAAS_RESOURCE_STATUS_RESERVED = 3;   // 已预留
+  PAAS_RESOURCE_STATUS_DRAINING = 4;   // 排空中
+  PAAS_RESOURCE_STATUS_FAULT = 5;      // 故障
+  PAAS_RESOURCE_STATUS_OFFLINE = 6;    // 下线
+  PAAS_RESOURCE_STATUS_DISABLED = 7;   // 禁用
+  PAAS_RESOURCE_STATUS_UNKNOWN = 8;    // 未知
+}
+
+// 禁用原因枚举
+enum DisableReason {
+  DISABLE_REASON_UNSPECIFIED = 0;
+  DISABLE_REASON_MAINTENANCE = 1;      // 维护
+  DISABLE_REASON_FAULT = 2;            // 故障
+  DISABLE_REASON_CAPACITY_ADJUST = 3;  // 容量调整
+  DISABLE_REASON_MANUAL = 4;           // 手动禁用
+}
+
+// 预留状态枚举
+enum ReserveStatus {
+  RESERVE_STATUS_UNSPECIFIED = 0;
+  RESERVE_STATUS_SUCCESS = 1;          // 预留成功
+  RESERVE_STATUS_FAILED = 2;           // 预留失败
+  RESERVE_STATUS_ALREADY_RESERVED = 3; // 已被预留
+  RESERVE_STATUS_NOT_FOUND = 4;        // 资源不存在
+  RESERVE_STATUS_UNAVAILABLE = 5;      // 资源不可用
+}

@@ -1,0 +1,431 @@
+syntax = "proto3";
+
+package api.v1.paas;
+
+option go_package = "github.com/gpu-scheduler/backend/pkg/pb/paas;paaspb";
+option java_package = "api.v1.paas";
+option java_outer_classname = "PaasProto";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "api/proto/v1/common.proto";
+
+// =============================================================
+// PaaS 平台消息定义
+//
+// PaaS 平台职责（数据源）:
+// 1. 作为 GPU 资源的权威数据源
+// 2. 提供资源全量/增量同步能力（Kafka Topic）
+// 3. 上报租户负载数据（Kafka Topic）
+// 4. 上报资源状态事件（排空完成、故障等，Kafka Topic）
+// 5. 接收算力调度的预留/排空请求（Kafka Topic）
+//
+// 消费方:
+// - 算力调度 (gid.gpuscheduler)       消费所有 paas.* Topic
+// - 内容管理 (gid.content-management) 消费 paas-resource-sync-* Topic
+//
+// Kafka Topic 列表:
+// - paas-resource-sync          (PaaS → 算力调度/内容管理) 资源同步（全量+增量合并）
+// - paas-resource-status        (PaaS → 算力调度)             资源状态事件
+// - paas-tenant-load            (PaaS → 算力调度)             租户负载数据
+// - gpuscheduler-paas-reserve   (算力调度 → PaaS)             批量预留/取消预留请求
+// - gpuscheduler-paas-drain     (算力调度 → PaaS)             批量排空请求
+// - paas-reserve-response       (PaaS → 算力调度)             批量预留响应
+// - paas-drain-response         (PaaS → 算力调度)             批量排空响应
+// =============================================================
+
+// =============================================================
+// 实体消息定义
+// =============================================================
+
+// 租户信息
+message TenantInfo {
+  string tenant_id = 1;
+  string tenant_name = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+  string description = 5; // 租户描述
+  google.protobuf.Timestamp delete_time = 6; // 软删除时间，非空表示已删除
+}
+
+// 游戏信息
+message GameInfo {
+  string game_id = 1;
+  string tenant_id = 2;
+  string tenant_name = 3;
+  string game_name = 4;
+  string global_game_id = 5;
+  google.protobuf.Timestamp create_time = 6;
+  google.protobuf.Timestamp update_time = 7;
+  google.protobuf.Timestamp delete_time = 8; // 软删除时间
+}
+
+// 节点信息
+message NodeInfo {
+  string node_id = 1;
+  string node_name = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+  google.protobuf.Timestamp delete_time = 5; // 软删除时间
+}
+
+// 机房信息
+message DataCenterInfo {
+  string data_center_id = 1;
+  string data_center_name = 2; // 机房名称
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+  google.protobuf.Timestamp delete_time = 5; // 软删除时间
+}
+
+// 机型信息
+message ModelInfo {
+  string model_id = 1;
+  string model_name = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+  google.protobuf.Timestamp delete_time = 5; // 软删除时间
+}
+
+// GPU 资源详细信息
+message GpuResourceInfo {
+  // 核心标识
+  string server_id = 1; // **系统主键**
+  string server_name = 2;
+
+  // 租户信息
+  string tenant_id = 3;
+  string tenant_name = 4;
+
+  // 节点信息
+  string node_id = 5;
+  string node_name = 6;
+
+  // 机房信息
+  string data_center_id = 7;
+  string data_center_name = 8; // 机房名称
+
+  // 机型信息
+  string model_id = 9;
+  string model_name = 10;
+
+  // 网络信息
+  string nat_ip = 11; // 内网 IP
+  string wan_ip = 12; // 外网 IP
+  string export_ip = 13; // 出口 IP
+  string export_ip_type = 14; // 出口 IP 类型
+  string export_ip2 = 15; // 出口 IP2
+  string export_ip2_type = 16; // 出口 IP2 类型
+  string export_ip3 = 17; // 出口 IP3
+  string export_ip3_type = 18; // 出口 IP3 类型
+  string dx_ip = 19; // 电信 IP
+  string lt_ip = 20; // 联通 IP
+  string yd_ip = 21; // 移动 IP
+  string bgp_ip = 22; // BGP IP
+
+  // 状态信息
+  int32 status = 23; // PaaS 原始状态 (0-8)
+  int32 freeze = 24; // 冻结标记（0=冻结, 1=解冻）
+
+  // 时间戳
+  google.protobuf.Timestamp create_time = 25;
+  google.protobuf.Timestamp update_time = 26;
+  google.protobuf.Timestamp delete_time = 27; // 软删除时间，非空表示已删除
+}
+
+// =============================================================
+// Kafka 消息定义
+// =============================================================
+
+// ---------------------------------------------------------
+// 同步事件载荷类型枚举
+// ---------------------------------------------------------
+
+// 同步载荷类型（标识本批次携带的数据类型）
+enum SyncPayloadType {
+  SYNC_PAYLOAD_TYPE_UNSPECIFIED = 0;
+  SYNC_PAYLOAD_TYPE_TENANT = 1; // 租户信息
+  SYNC_PAYLOAD_TYPE_GAME = 2; // 游戏信息
+  SYNC_PAYLOAD_TYPE_NODE = 3; // 节点信息
+  SYNC_PAYLOAD_TYPE_DATA_CENTER = 4; // 机房信息
+  SYNC_PAYLOAD_TYPE_MODEL = 5; // 机型信息
+  SYNC_PAYLOAD_TYPE_GPU_RESOURCE = 6; // GPU 资源信息
+}
+
+// ---------------------------------------------------------
+// 独立同步消息（按实体类型拆分）
+// ---------------------------------------------------------
+
+// 同步消息公共头
+// 各实体同步消息共用的元数据字段
+message SyncHeader {
+  string request_id = 1; // 请求 ID（幂等键，关联同一次同步）
+  SyncPayloadType payload_type = 2; // 载荷类型
+  google.protobuf.Timestamp sync_time = 3;
+  bool is_full_sync = 4; // true=全量同步，false=增量同步
+  int32 batch_index = 5; // 批次序号（全量同步时使用，从 0 开始）
+  bool is_last_batch = 6; // 是否最后一批（全量同步时使用）
+}
+
+// 租户信息同步事件
+// Topic: paas-resource-sync
+message TenantSyncEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+  SyncHeader header = 2;
+  repeated TenantInfo tenants = 3;
+}
+
+// 游戏信息同步事件
+// Topic: paas-resource-sync
+message GameSyncEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+  SyncHeader header = 2;
+  repeated GameInfo games = 3;
+}
+
+// 节点信息同步事件
+// Topic: paas-resource-sync
+message NodeSyncEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+  SyncHeader header = 2;
+  repeated NodeInfo nodes = 3;
+}
+
+// 机房信息同步事件
+// Topic: paas-resource-sync
+message DataCenterSyncEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+  SyncHeader header = 2;
+  repeated DataCenterInfo data_centers = 3;
+}
+
+// 机型信息同步事件
+// Topic: paas-resource-sync
+message ModelSyncEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+  SyncHeader header = 2;
+  repeated ModelInfo models = 3;
+}
+
+// GPU 资源同步事件（主要的高频数据）
+// Topic: paas-resource-sync
+message GpuResourceSyncEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+  SyncHeader header = 2;
+  repeated GpuResourceInfo resources = 3;
+}
+
+// 资源状态事件
+// Topic: paas-resource-status
+// 说明: 仅用于故障和状态变更事件。预留/排空响应已迁移至独立批量响应消息
+message ResourceStatusEvent {
+  api.v1.common.MessageEnvelope envelope = 1;
+
+  string event_id = 2;
+  string server_id = 3; // GPU serverId（系统主键）
+  string sn = 4; // 设备 SN（兼容字段）
+  string tenant_id = 5;
+
+  enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    EVENT_TYPE_FAULT = 1;
+    EVENT_TYPE_STATUS_CHANGE = 2;
+  }
+  EventType event_type = 6;
+
+  api.v1.common.PaasResourceStatus status = 7;
+  string message = 8;
+
+  // 故障相关
+  string fault_code = 9;
+  api.v1.common.DisableReason disable_reason = 10;
+
+  google.protobuf.Timestamp event_time = 11;
+}
+
+// 租户负载上报
+// Topic: paas-tenant-load
+// 说明: 以租户为根维度，包含租户整体负载及其下各节点、机房的负载明细
+//       调度引擎根据租户整体 calculated_load_score 决定自动扩/缩容，
+//       再结合节点/机房维度选择最优资源
+message TenantLoadReport {
+  api.v1.common.MessageEnvelope envelope = 1;
+
+  string report_id = 2;
+  string tenant_id = 3;
+  string tenant_name = 4;
+
+  // --- 租户整体负载 ---
+  int32 gpu_used_count = 5; // 该租户已使用 GPU 数量
+  int32 gpu_total_count = 6; // 该租户分配的 GPU 总量
+  int32 service_used_slots = 7; // 该租户已用路数
+  int32 service_total_slots = 8; // 该租户总路数
+  int32 calculated_load_score = 9; // 综合负载分 0-100（调度引擎依据此值）
+
+  // --- 节点维度负载明细 ---
+  repeated NodeLoadDetail node_loads = 10;
+
+  // --- 机房维度负载明细 ---
+  repeated DataCenterLoadDetail data_center_loads = 11;
+
+  google.protobuf.Timestamp report_time = 12;
+}
+
+// 节点级负载明细（内嵌于 TenantLoadReport）
+// 描述某租户在某个节点上的负载情况
+message NodeLoadDetail {
+  string node_id = 1;
+  string node_name = 2;
+  int32 total_gpu_count = 3; // 该租户在此节点的 GPU 总数
+  int32 used_gpu_count = 4; // 该租户在此节点的已用 GPU 数
+  int32 available_gpu_count = 5; // 该租户在此节点的可用 GPU 数
+  double gpu_usage_percent = 6; // GPU 使用率
+  int32 active_sessions = 7; // 活跃会话数
+  int32 total_capacity = 8; // 总容量（路数）
+}
+
+// 机房级负载明细（内嵌于 TenantLoadReport）
+// 描述某租户在某个机房的负载情况
+message DataCenterLoadDetail {
+  string data_center_id = 1;
+  string data_center_code = 2;
+  string data_center_name = 3;
+  int32 total_gpu_count = 4; // 该租户在此机房的 GPU 总数
+  int32 used_gpu_count = 5; // 该租户在此机房的已用 GPU 数
+  int32 available_gpu_count = 6; // 该租户在此机房的可用 GPU 数
+  double avg_gpu_usage_percent = 7; // 平均 GPU 使用率
+  int32 total_active_sessions = 8; // 活跃会话总数
+  int32 total_capacity = 9; // 总容量
+  int32 faulty_gpu_count = 10; // 故障 GPU 数
+}
+
+// =============================================================
+// 算力调度 → PaaS 请求消息（批量操作）
+// =============================================================
+
+// ---------------------------------------------------------
+// 服务器选择条件（自动模式下由 PaaS 按此条件实时选择并原子预留）
+// ---------------------------------------------------------
+message SelectionCriteria {
+  int32 count = 1; // 需要选择的服务器数量（必填）
+  repeated string preferred_node_ids = 2; // 优先选择的节点 ID
+  repeated string preferred_node_codes = 3; // 优先选择的节点编码
+  repeated string preferred_data_center_codes = 4; // 优先选择的机房编码
+  repeated string preferred_model_codes = 5; // 优先选择的机型编码
+  repeated string excluded_server_ids = 6; // 排除的服务器 ID（如刚失败的）
+  // PaaS 默认排序：AVAILABLE > IN_USE(低会话) > IN_USE(高会话)
+  // 即优先选择无活跃会话的空闲服务器，以减少排空成本
+}
+
+// ---------------------------------------------------------
+// 批量预留
+// ---------------------------------------------------------
+
+// 批量预留资源请求（算力调度 → PaaS）
+// Topic: gpuscheduler-paas-reserve
+// 双模式:
+//   手动模式: 填写 server_ids，PaaS 逐一检查并预留
+//   自动模式: server_ids 为空时使用 criteria，PaaS 实时选择最优服务器并原子预留
+// 说明: 回收/迁移流程中，算力调度先请求 PaaS 预留资源，防止新用户接入
+message BatchReserveResourceRequest {
+  api.v1.common.MessageEnvelope envelope = 1;
+  string request_id = 2; // 请求 ID（幂等键）
+  string task_id = 3; // 关联调度任务 ID
+  string tenant_id = 4; // 当前归属租户 ID
+
+  // 手动模式：直接指定 server_ids（非空时优先使用，忽略 criteria）
+  repeated string server_ids = 5;
+  // 自动模式：server_ids 为空时，PaaS 按条件选择并原子预留
+  SelectionCriteria criteria = 6;
+
+  string reason = 7; // 预留原因
+  int32 timeout_seconds = 8; // 预留超时时间（秒），默认 300
+  google.protobuf.Timestamp request_time = 9;
+}
+
+// 批量预留响应（PaaS → 算力调度）
+// Topic: paas-reserve-response
+message BatchReserveResponse {
+  api.v1.common.MessageEnvelope envelope = 1;
+  string request_id = 2; // 关联请求 ID
+  string task_id = 3; // 关联调度任务 ID
+
+  int32 total_requested = 4; // 请求的总数
+  int32 success_count = 5; // 预留成功数
+  int32 failed_count = 6; // 预留失败数
+
+  repeated ServerReserveResult results = 7; // 各服务器预留结果
+
+  google.protobuf.Timestamp response_time = 8;
+}
+
+// 单台服务器预留结果
+message ServerReserveResult {
+  string server_id = 1;
+  string sn = 2; // 设备 SN（兼容字段）
+  api.v1.common.ReserveStatus reserve_status = 3; // 预留结果
+  api.v1.common.PaasResourceStatus current_status = 4; // 服务器当前实际状态
+  int32 active_sessions = 5; // 当前活跃会话数（用于决定是否需排空）
+  string message = 6; // 描述信息（失败原因等）
+}
+
+// ---------------------------------------------------------
+// 批量排空
+// ---------------------------------------------------------
+
+// 批量排空资源请求（算力调度 → PaaS）
+// Topic: gpuscheduler-paas-drain
+// 说明: 预留成功后，对仍有活跃会话的服务器批量排空
+message BatchDrainResourceRequest {
+  api.v1.common.MessageEnvelope envelope = 1;
+  string request_id = 2; // 请求 ID（幂等键）
+  string task_id = 3; // 关联调度任务 ID
+  repeated string server_ids = 4; // 需排空的 server_ids
+  string tenant_id = 5; // 当前租户 ID
+  bool is_forced = 6; // 是否强制排空（true=立即断开会话）
+  string reason = 7; // 排空原因
+  int32 drain_timeout_seconds = 8; // 排空超时时间（秒），超时视为失败
+  google.protobuf.Timestamp request_time = 9;
+}
+
+// 批量排空响应（PaaS → 算力调度）
+// Topic: paas-drain-response
+// 说明: 当批次内所有服务器完成排空（或超时/失败）后一次性返回
+message BatchDrainResponse {
+  api.v1.common.MessageEnvelope envelope = 1;
+  string request_id = 2; // 关联请求 ID
+  string task_id = 3; // 关联调度任务 ID
+
+  int32 total_requested = 4; // 请求的总数
+  int32 success_count = 5; // 排空成功数
+  int32 failed_count = 6; // 排空失败数
+
+  repeated ServerDrainResult results = 7; // 各服务器排空结果
+
+  google.protobuf.Timestamp response_time = 8;
+}
+
+// 单台服务器排空结果
+message ServerDrainResult {
+  string server_id = 1;
+  string sn = 2; // 设备 SN（兼容字段）
+  bool success = 3; // 是否排空成功
+  int32 terminated_sessions = 4; // 终止的会话数
+  string message = 5; // 描述信息（失败原因等）
+}
+
+// ---------------------------------------------------------
+// 批量取消预留
+// ---------------------------------------------------------
+
+// 批量取消预留请求（算力调度 → PaaS）
+// Topic: gpuscheduler-paas-reserve（复用 Topic，通过消息类型区分）
+// 说明: 任务取消或超时时，批量释放已预留的资源
+message BatchCancelReserveRequest {
+  api.v1.common.MessageEnvelope envelope = 1;
+  string request_id = 2; // 请求 ID（幂等键）
+  string task_id = 3; // 关联调度任务 ID
+  repeated string server_ids = 4; // 需取消预留的 server_ids
+  string reason = 5; // 取消原因
+  google.protobuf.Timestamp request_time = 6;
+}
