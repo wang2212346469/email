@@ -1,6 +1,7 @@
 package paas.sync;
 
 import paas.kafka.EventType;
+import paas.kafka.JsonUtils;
 import paas.kafka.KafkaConsumerAdapter;
 import paas.kafka.PayloadType;
 import paas.kafka.SyncHeader;
@@ -39,11 +40,11 @@ public abstract class EntitySyncConsumer extends KafkaConsumerAdapter {
      */
     protected SyncHeader parseSyncHeader(String payload) {
         try {
-            String payloadType = extractField(payload, "payloadType", "payload_type");
-            String eventType   = extractField(payload, "eventType",   "event_type");
-            int totalCount   = parseIntField(payload, "totalCount",   "total_count",   0);
-            int batchIndex   = parseIntField(payload, "batchIndex",   "batch_index",   0);
-            int totalBatches = parseIntField(payload, "totalBatches", "total_batches", 1);
+            String payloadType = JsonUtils.extractField(payload, "payloadType", "payload_type");
+            String eventType   = JsonUtils.extractField(payload, "eventType",   "event_type");
+            int totalCount   = JsonUtils.extractInt(payload, "totalCount",   "total_count",   0);
+            int batchIndex   = JsonUtils.extractInt(payload, "batchIndex",   "batch_index",   0);
+            int totalBatches = JsonUtils.extractInt(payload, "totalBatches", "total_batches", 1);
 
             if (payloadType == null || payloadType.isEmpty()) {
                 payloadType = PayloadType.GPU_RESOURCE.name();
@@ -65,7 +66,7 @@ public abstract class EntitySyncConsumer extends KafkaConsumerAdapter {
     @Override
     protected void processMessage(String key, String payload) throws Exception {
         SyncHeader header = parseSyncHeader(payload);
-        String dataJson = extractField(payload, "data", "data");
+        String dataJson = JsonUtils.extractField(payload, "data", "data");
         if (dataJson == null || dataJson.isEmpty()) {
             dataJson = payload;
         }
@@ -83,7 +84,7 @@ public abstract class EntitySyncConsumer extends KafkaConsumerAdapter {
 
     /**
      * 从简单 JSON 字符串中按字段名（支持两种命名）提取字符串值。
-     * Extracts a string value from a simple JSON string by field name (supports two naming styles).
+     * Delegates to {@link JsonUtils#extractField}.
      *
      * @param json       原始 JSON 字符串 / raw JSON string
      * @param camelKey   驼峰命名键名 / camelCase key name
@@ -91,55 +92,14 @@ public abstract class EntitySyncConsumer extends KafkaConsumerAdapter {
      * @return 字段值，未找到时返回 null / field value, null if not found
      */
     protected static String extractField(String json, String camelKey, String snakeKey) {
-        String val = extractByKey(json, camelKey);
-        if (val == null) {
-            val = extractByKey(json, snakeKey);
-        }
-        return val;
-    }
-
-    /**
-     * 从简单 JSON 中按单个键名提取字符串值（不支持嵌套）。
-     * Extracts a string value from a simple JSON by a single key name (no nested support).
-     */
-    private static String extractByKey(String json, String key) {
-        if (json == null || key == null) return null;
-        // Match "key":"value" or "key": "value"
-        String pattern = "\"" + key + "\"";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return null;
-        int colonIdx = json.indexOf(':', idx + pattern.length());
-        if (colonIdx < 0) return null;
-        int start = colonIdx + 1;
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) {
-            start++;
-        }
-        if (start >= json.length()) return null;
-        if (json.charAt(start) == '"') {
-            int end = json.indexOf('"', start + 1);
-            if (end < 0) return null;
-            return json.substring(start + 1, end);
-        } else {
-            // Number or boolean
-            int end = start;
-            while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') {
-                end++;
-            }
-            return json.substring(start, end).trim();
-        }
+        return JsonUtils.extractField(json, camelKey, snakeKey);
     }
 
     /**
      * 从简单 JSON 中按字段名提取整型值（支持两种命名）。
-     * Extracts an integer value from a simple JSON by field name (supports two naming styles).
+     * Delegates to {@link JsonUtils#extractInt}.
      */
     protected static int parseIntField(String json, String camelKey, String snakeKey, int defaultVal) {
-        String val = extractField(json, camelKey, snakeKey);
-        if (val == null || val.isEmpty()) return defaultVal;
-        try {
-            return Integer.parseInt(val.trim());
-        } catch (NumberFormatException e) {
-            return defaultVal;
-        }
+        return JsonUtils.extractInt(json, camelKey, snakeKey, defaultVal);
     }
 }

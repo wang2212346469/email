@@ -1,5 +1,6 @@
 package paas.load;
 
+import paas.kafka.JsonUtils;
 import paas.kafka.KafkaConsumerAdapter;
 import paas.kafka.KafkaTopics;
 import paas.kafka.TenantLoadReport;
@@ -101,41 +102,10 @@ public class TenantLoadConsumer extends KafkaConsumerAdapter {
     private TenantLoadReport parseReport(String json) {
         if (json == null || json.isEmpty()) return null;
         TenantLoadReport report = new TenantLoadReport();
-        report.setTenantId(extractField(json, "tenantId", "tenant_id"));
-        String scoreStr = extractField(json, "calculatedLoadScore", "calculated_load_score");
-        if (scoreStr != null) {
-            try { report.setCalculatedLoadScore(Double.parseDouble(scoreStr.trim())); }
-            catch (NumberFormatException ignored) {}
-        }
-        String tsStr = extractField(json, "timestamp", "timestamp");
-        if (tsStr != null) {
-            try { report.setTimestamp(Long.parseLong(tsStr.trim())); }
-            catch (NumberFormatException ignored) {}
-        }
+        report.setTenantId(JsonUtils.extractField(json, "tenantId", "tenant_id"));
+        report.setCalculatedLoadScore(
+                JsonUtils.extractDouble(json, "calculatedLoadScore", "calculated_load_score", 0.0));
+        report.setTimestamp(JsonUtils.extractLong(json, "timestamp", "timestamp", 0L));
         return report;
-    }
-
-    private static String extractField(String json, String camelKey, String snakeKey) {
-        String val = extractByKey(json, camelKey);
-        return val != null ? val : extractByKey(json, snakeKey);
-    }
-
-    private static String extractByKey(String json, String key) {
-        String pattern = "\"" + key + "\"";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return null;
-        int colonIdx = json.indexOf(':', idx + pattern.length());
-        if (colonIdx < 0) return null;
-        int start = colonIdx + 1;
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
-        if (start >= json.length()) return null;
-        if (json.charAt(start) == '"') {
-            int end = json.indexOf('"', start + 1);
-            return end < 0 ? null : json.substring(start + 1, end);
-        } else {
-            int end = start;
-            while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') end++;
-            return json.substring(start, end).trim();
-        }
     }
 }

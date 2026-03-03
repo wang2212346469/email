@@ -5,7 +5,9 @@ import paas.model.GPUModel;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * GPU 型号实体同步消费者，处理 PaaS 同步消息中的 GPU_MODEL 类型。
@@ -13,8 +15,8 @@ import java.util.List;
  */
 public class GPUModelSyncConsumer extends EntitySyncConsumer {
 
-    /** 已同步的 GPU 型号列表。 List of synced GPU models. */
-    private final List<GPUModel> syncedGPUModels = new ArrayList<>();
+    /** 已同步的 GPU 型号映射（modelId → GPUModel），保持插入顺序。 Map of synced GPU models (modelId → GPUModel), preserving insertion order. */
+    private final Map<String, GPUModel> syncedGPUModels = new LinkedHashMap<>();
 
     @Override
     protected String getTopic() {
@@ -26,7 +28,7 @@ public class GPUModelSyncConsumer extends EntitySyncConsumer {
      * Returns the list of synced GPU models (read-only view).
      */
     public List<GPUModel> getSyncedGPUModels() {
-        return Collections.unmodifiableList(syncedGPUModels);
+        return Collections.unmodifiableList(new ArrayList<>(syncedGPUModels.values()));
     }
 
     @Override
@@ -36,8 +38,7 @@ public class GPUModelSyncConsumer extends EntitySyncConsumer {
             System.err.println("[GPUModelSyncConsumer] Skipping upsert - invalid payload");
             return;
         }
-        syncedGPUModels.removeIf(m -> model.getModelId().equals(m.getModelId()));
-        syncedGPUModels.add(model);
+        syncedGPUModels.put(model.getModelId(), model);
         System.out.println("[GPUModelSyncConsumer] Upserted: " + model);
     }
 
@@ -45,7 +46,7 @@ public class GPUModelSyncConsumer extends EntitySyncConsumer {
     protected void handleDelete(String payloadJson) {
         String modelId = extractField(payloadJson, "modelId", "model_id");
         if (modelId == null) return;
-        syncedGPUModels.removeIf(m -> modelId.equals(m.getModelId()));
+        syncedGPUModels.remove(modelId);
         System.out.println("[GPUModelSyncConsumer] Deleted modelId=" + modelId);
     }
 }

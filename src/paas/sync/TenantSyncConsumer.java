@@ -4,7 +4,10 @@ import paas.kafka.KafkaTopics;
 import paas.model.Tenant;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 租户实体同步消费者，处理 PaaS 全量/增量同步中的 TENANT 类型消息。
@@ -12,8 +15,8 @@ import java.util.List;
  */
 public class TenantSyncConsumer extends EntitySyncConsumer {
 
-    /** 已同步的租户列表。 List of synced tenants. */
-    private final List<Tenant> syncedTenants = new ArrayList<>();
+    /** 已同步的租户映射（tenantId → Tenant），保持插入顺序。 Map of synced tenants (tenantId → Tenant), preserving insertion order. */
+    private final Map<String, Tenant> syncedTenants = new LinkedHashMap<>();
 
     @Override
     protected String getTopic() {
@@ -27,7 +30,7 @@ public class TenantSyncConsumer extends EntitySyncConsumer {
      * @return 租户列表 / tenant list
      */
     public List<Tenant> getSyncedTenants() {
-        return java.util.Collections.unmodifiableList(syncedTenants);
+        return Collections.unmodifiableList(new ArrayList<>(syncedTenants.values()));
     }
 
     /**
@@ -41,21 +44,19 @@ public class TenantSyncConsumer extends EntitySyncConsumer {
             System.err.println("[TenantSyncConsumer] Skipping upsert - invalid payload");
             return;
         }
-        // Remove existing entry with same ID then re-add (upsert semantics)
-        syncedTenants.removeIf(t -> tenant.getTenantId().equals(t.getTenantId()));
-        syncedTenants.add(tenant);
+        syncedTenants.put(tenant.getTenantId(), tenant);
         System.out.println("[TenantSyncConsumer] Upserted: " + tenant);
     }
 
     /**
-     * 处理 DELETE 事件：从列表中移除对应租户。
-     * Handles DELETE events: removes the corresponding tenant from the list.
+     * 处理 DELETE 事件：从映射中移除对应租户。
+     * Handles DELETE events: removes the corresponding tenant from the map.
      */
     @Override
     protected void handleDelete(String payloadJson) {
         String tenantId = extractField(payloadJson, "tenantId", "tenant_id");
         if (tenantId == null) return;
-        syncedTenants.removeIf(t -> tenantId.equals(t.getTenantId()));
+        syncedTenants.remove(tenantId);
         System.out.println("[TenantSyncConsumer] Deleted tenantId=" + tenantId);
     }
 }

@@ -5,7 +5,9 @@ import paas.model.Node;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 节点实体同步消费者，处理 PaaS 同步消息中的 NODE 类型。
@@ -13,8 +15,8 @@ import java.util.List;
  */
 public class NodeSyncConsumer extends EntitySyncConsumer {
 
-    /** 已同步的节点列表。 List of synced nodes. */
-    private final List<Node> syncedNodes = new ArrayList<>();
+    /** 已同步的节点映射（nodeId → Node），保持插入顺序。 Map of synced nodes (nodeId → Node), preserving insertion order. */
+    private final Map<String, Node> syncedNodes = new LinkedHashMap<>();
 
     @Override
     protected String getTopic() {
@@ -26,7 +28,7 @@ public class NodeSyncConsumer extends EntitySyncConsumer {
      * Returns the list of synced nodes (read-only view).
      */
     public List<Node> getSyncedNodes() {
-        return Collections.unmodifiableList(syncedNodes);
+        return Collections.unmodifiableList(new ArrayList<>(syncedNodes.values()));
     }
 
     @Override
@@ -36,8 +38,7 @@ public class NodeSyncConsumer extends EntitySyncConsumer {
             System.err.println("[NodeSyncConsumer] Skipping upsert - invalid payload");
             return;
         }
-        syncedNodes.removeIf(n -> node.getNodeId().equals(n.getNodeId()));
-        syncedNodes.add(node);
+        syncedNodes.put(node.getNodeId(), node);
         System.out.println("[NodeSyncConsumer] Upserted: " + node);
     }
 
@@ -45,7 +46,7 @@ public class NodeSyncConsumer extends EntitySyncConsumer {
     protected void handleDelete(String payloadJson) {
         String nodeId = extractField(payloadJson, "nodeId", "node_id");
         if (nodeId == null) return;
-        syncedNodes.removeIf(n -> nodeId.equals(n.getNodeId()));
+        syncedNodes.remove(nodeId);
         System.out.println("[NodeSyncConsumer] Deleted nodeId=" + nodeId);
     }
 }

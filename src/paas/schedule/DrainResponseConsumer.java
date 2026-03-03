@@ -2,6 +2,7 @@ package paas.schedule;
 
 import paas.kafka.DrainResponse;
 import paas.kafka.DrainResponse.ServerDrainResult;
+import paas.kafka.JsonUtils;
 import paas.kafka.KafkaConsumerAdapter;
 import paas.kafka.KafkaTopics;
 
@@ -75,7 +76,7 @@ public class DrainResponseConsumer extends KafkaConsumerAdapter {
      */
     private DrainResponse parseResponse(String json) {
         if (json == null || json.isEmpty()) return null;
-        String taskId = extractField(json, "taskId", "task_id");
+        String taskId = JsonUtils.extractField(json, "taskId", "task_id");
         List<ServerDrainResult> results = new ArrayList<>();
 
         int searchFrom = 0;
@@ -87,43 +88,19 @@ public class DrainResponseConsumer extends KafkaConsumerAdapter {
                 srvIdx = json.indexOf(srvPattern, searchFrom);
             }
             if (srvIdx < 0) break;
-            String serverId = extractByKey(json.substring(srvIdx), srvPattern.replace("\"", ""));
+            String serverId = JsonUtils.extractByKey(json.substring(srvIdx), srvPattern.replace("\"", ""));
             if (serverId == null) { searchFrom = srvIdx + 1; continue; }
             int successIdx = json.indexOf("\"success\"", srvIdx);
             boolean success = false;
             if (successIdx >= 0) {
-                String successStr = extractByKey(json.substring(successIdx), "success");
+                String successStr = JsonUtils.extractByKey(json.substring(successIdx), "success");
                 success = "true".equalsIgnoreCase(successStr);
             }
             int msgIdx = json.indexOf("\"message\"", srvIdx);
-            String message = msgIdx >= 0 ? extractByKey(json.substring(msgIdx), "message") : "";
+            String message = msgIdx >= 0 ? JsonUtils.extractByKey(json.substring(msgIdx), "message") : "";
             results.add(new ServerDrainResult(serverId, success, message));
             searchFrom = srvIdx + srvPattern.length();
         }
         return new DrainResponse(taskId, results);
-    }
-
-    private static String extractField(String json, String camelKey, String snakeKey) {
-        String val = extractByKey(json, camelKey);
-        return val != null ? val : extractByKey(json, snakeKey);
-    }
-
-    private static String extractByKey(String json, String key) {
-        String pattern = "\"" + key + "\"";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return null;
-        int colonIdx = json.indexOf(':', idx + pattern.length());
-        if (colonIdx < 0) return null;
-        int start = colonIdx + 1;
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
-        if (start >= json.length()) return null;
-        if (json.charAt(start) == '"') {
-            int end = json.indexOf('"', start + 1);
-            return end < 0 ? null : json.substring(start + 1, end);
-        } else {
-            int end = start;
-            while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') end++;
-            return json.substring(start, end).trim();
-        }
     }
 }

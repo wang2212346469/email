@@ -1,5 +1,6 @@
 package paas.schedule;
 
+import paas.kafka.JsonUtils;
 import paas.kafka.KafkaConsumerAdapter;
 import paas.kafka.KafkaTopics;
 import paas.kafka.ReserveResponse;
@@ -76,7 +77,7 @@ public class ReserveResponseConsumer extends KafkaConsumerAdapter {
      */
     private ReserveResponse parseResponse(String json) {
         if (json == null || json.isEmpty()) return null;
-        String taskId = extractField(json, "taskId", "task_id");
+        String taskId = JsonUtils.extractField(json, "taskId", "task_id");
         List<ServerReserveResult> results = new ArrayList<>();
         // Simple result parsing: look for repeated "serverId"/"server_id" and "status" pairs
         int searchFrom = 0;
@@ -88,11 +89,11 @@ public class ReserveResponseConsumer extends KafkaConsumerAdapter {
                 srvIdx = json.indexOf(srvPattern, searchFrom);
             }
             if (srvIdx < 0) break;
-            String serverId = extractByKey(json.substring(srvIdx), srvPattern.replace("\"", ""));
+            String serverId = JsonUtils.extractByKey(json.substring(srvIdx), srvPattern.replace("\"", ""));
             if (serverId == null) { searchFrom = srvIdx + 1; continue; }
             // Find the nearest "status" after serverId
             int statusIdx = json.indexOf("\"status\"", srvIdx);
-            String statusStr = statusIdx >= 0 ? extractByKey(json.substring(statusIdx), "status") : null;
+            String statusStr = statusIdx >= 0 ? JsonUtils.extractByKey(json.substring(statusIdx), "status") : null;
             ReserveResultStatus status = ReserveResultStatus.FAILED;
             if (statusStr != null) {
                 try { status = ReserveResultStatus.valueOf(statusStr.toUpperCase()); }
@@ -102,29 +103,5 @@ public class ReserveResponseConsumer extends KafkaConsumerAdapter {
             searchFrom = srvIdx + srvPattern.length();
         }
         return new ReserveResponse(taskId, results);
-    }
-
-    private static String extractField(String json, String camelKey, String snakeKey) {
-        String val = extractByKey(json, camelKey);
-        return val != null ? val : extractByKey(json, snakeKey);
-    }
-
-    private static String extractByKey(String json, String key) {
-        String pattern = "\"" + key + "\"";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return null;
-        int colonIdx = json.indexOf(':', idx + pattern.length());
-        if (colonIdx < 0) return null;
-        int start = colonIdx + 1;
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
-        if (start >= json.length()) return null;
-        if (json.charAt(start) == '"') {
-            int end = json.indexOf('"', start + 1);
-            return end < 0 ? null : json.substring(start + 1, end);
-        } else {
-            int end = start;
-            while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') end++;
-            return json.substring(start, end).trim();
-        }
     }
 }

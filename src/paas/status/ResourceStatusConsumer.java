@@ -1,6 +1,7 @@
 package paas.status;
 
 import paas.kafka.HealthStatus;
+import paas.kafka.JsonUtils;
 import paas.kafka.KafkaConsumerAdapter;
 import paas.kafka.KafkaTopics;
 import paas.kafka.ResourceStatusEvent;
@@ -88,41 +89,9 @@ public class ResourceStatusConsumer extends KafkaConsumerAdapter {
      */
     private ResourceStatusEvent parseEvent(String json) {
         if (json == null || json.isEmpty()) return null;
-        String serverId  = extractField(json, "serverId",  "server_id");
-        String status    = extractField(json, "status",    "status");
-        String tsStr     = extractField(json, "timestamp", "timestamp");
-        long timestamp = 0L;
-        if (tsStr != null) {
-            try { timestamp = Long.parseLong(tsStr.trim()); } catch (NumberFormatException ignored) {}
-        }
+        String serverId  = JsonUtils.extractField(json, "serverId",  "server_id");
+        String status    = JsonUtils.extractField(json, "status",    "status");
+        long timestamp   = JsonUtils.extractLong(json, "timestamp", "timestamp", 0L);
         return new ResourceStatusEvent(serverId, status, timestamp);
-    }
-
-    /**
-     * 从 JSON 字符串中提取字段值（支持两种命名风格）。
-     * Extracts a field value from a JSON string (supports two naming styles).
-     */
-    private static String extractField(String json, String camelKey, String snakeKey) {
-        String val = extractByKey(json, camelKey);
-        return val != null ? val : extractByKey(json, snakeKey);
-    }
-
-    private static String extractByKey(String json, String key) {
-        String pattern = "\"" + key + "\"";
-        int idx = json.indexOf(pattern);
-        if (idx < 0) return null;
-        int colonIdx = json.indexOf(':', idx + pattern.length());
-        if (colonIdx < 0) return null;
-        int start = colonIdx + 1;
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
-        if (start >= json.length()) return null;
-        if (json.charAt(start) == '"') {
-            int end = json.indexOf('"', start + 1);
-            return end < 0 ? null : json.substring(start + 1, end);
-        } else {
-            int end = start;
-            while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') end++;
-            return json.substring(start, end).trim();
-        }
     }
 }

@@ -5,7 +5,9 @@ import paas.model.GPUResource;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * GPU 物理资源实体同步消费者，处理 PaaS 同步消息中的 GPU_RESOURCE 类型。
@@ -15,8 +17,8 @@ import java.util.List;
  */
 public class GPUResourceSyncConsumer extends EntitySyncConsumer {
 
-    /** 已同步的 GPU 资源列表。 List of synced GPU resources. */
-    private final List<GPUResource> syncedResources = new ArrayList<>();
+    /** 已同步的 GPU 资源映射（serverId → GPUResource），保持插入顺序。 Map of synced GPU resources (serverId → GPUResource), preserving insertion order. */
+    private final Map<String, GPUResource> syncedResources = new LinkedHashMap<>();
 
     /** 资源池匹配器，负责按租户 ID 匹配资源池。 Pool matcher for tenant-based pool assignment. */
     private final ResourcePoolMatcher poolMatcher;
@@ -46,7 +48,7 @@ public class GPUResourceSyncConsumer extends EntitySyncConsumer {
      * Returns the list of synced GPU resources (read-only view).
      */
     public List<GPUResource> getSyncedResources() {
-        return Collections.unmodifiableList(syncedResources);
+        return Collections.unmodifiableList(new ArrayList<>(syncedResources.values()));
     }
 
     /**
@@ -66,8 +68,7 @@ public class GPUResourceSyncConsumer extends EntitySyncConsumer {
         // 资源池自动匹配 / auto-match resource pool
         poolMatcher.matchPool(resource);
 
-        syncedResources.removeIf(r -> resource.getServerId().equals(r.getServerId()));
-        syncedResources.add(resource);
+        syncedResources.put(resource.getServerId(), resource);
         System.out.println("[GPUResourceSyncConsumer] Upserted: " + resource);
     }
 
@@ -75,7 +76,7 @@ public class GPUResourceSyncConsumer extends EntitySyncConsumer {
     protected void handleDelete(String payloadJson) {
         String serverId = extractField(payloadJson, "serverId", "server_id");
         if (serverId == null) return;
-        syncedResources.removeIf(r -> serverId.equals(r.getServerId()));
+        syncedResources.remove(serverId);
         System.out.println("[GPUResourceSyncConsumer] Deleted serverId=" + serverId);
     }
 }

@@ -5,7 +5,9 @@ import paas.model.DataCenter;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 数据中心实体同步消费者，处理 PaaS 同步消息中的 DATA_CENTER 类型。
@@ -13,8 +15,8 @@ import java.util.List;
  */
 public class DataCenterSyncConsumer extends EntitySyncConsumer {
 
-    /** 已同步的数据中心列表。 List of synced data centers. */
-    private final List<DataCenter> syncedDataCenters = new ArrayList<>();
+    /** 已同步的数据中心映射（dcId → DataCenter），保持插入顺序。 Map of synced data centers (dcId → DataCenter), preserving insertion order. */
+    private final Map<String, DataCenter> syncedDataCenters = new LinkedHashMap<>();
 
     @Override
     protected String getTopic() {
@@ -26,7 +28,7 @@ public class DataCenterSyncConsumer extends EntitySyncConsumer {
      * Returns the list of synced data centers (read-only view).
      */
     public List<DataCenter> getSyncedDataCenters() {
-        return Collections.unmodifiableList(syncedDataCenters);
+        return Collections.unmodifiableList(new ArrayList<>(syncedDataCenters.values()));
     }
 
     @Override
@@ -36,8 +38,7 @@ public class DataCenterSyncConsumer extends EntitySyncConsumer {
             System.err.println("[DataCenterSyncConsumer] Skipping upsert - invalid payload");
             return;
         }
-        syncedDataCenters.removeIf(d -> dc.getDcId().equals(d.getDcId()));
-        syncedDataCenters.add(dc);
+        syncedDataCenters.put(dc.getDcId(), dc);
         System.out.println("[DataCenterSyncConsumer] Upserted: " + dc);
     }
 
@@ -45,7 +46,7 @@ public class DataCenterSyncConsumer extends EntitySyncConsumer {
     protected void handleDelete(String payloadJson) {
         String dcId = extractField(payloadJson, "dcId", "dc_id");
         if (dcId == null) return;
-        syncedDataCenters.removeIf(d -> dcId.equals(d.getDcId()));
+        syncedDataCenters.remove(dcId);
         System.out.println("[DataCenterSyncConsumer] Deleted dcId=" + dcId);
     }
 }
